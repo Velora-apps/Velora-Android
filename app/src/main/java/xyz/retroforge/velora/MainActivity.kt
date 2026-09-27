@@ -22,6 +22,9 @@ import xyz.retroforge.velora.ui.auth.AuthState
 import xyz.retroforge.velora.ui.auth.AuthViewModel
 import xyz.retroforge.velora.ui.auth.LoginScreen
 import xyz.retroforge.velora.ui.chat.ChatScreen
+import xyz.retroforge.velora.ui.dm.DmChatScreen
+import xyz.retroforge.velora.ui.dm.DmListScreen
+import xyz.retroforge.velora.ui.friends.FriendsScreen
 import xyz.retroforge.velora.ui.servers.ChannelListScreen
 import xyz.retroforge.velora.ui.servers.ServerListScreen
 import xyz.retroforge.velora.ui.theme.VeloraTheme
@@ -74,7 +77,64 @@ private fun AppNavHost(onLogout: () -> Unit) {
                     val encodedName = URLEncoder.encode(server.name, "UTF-8")
                     navController.navigate("channels/${server.id}/$encodedName")
                 },
+                onOpenFriends = { navController.navigate("friends") },
+                onOpenDms = { navController.navigate("dms") },
                 onLogout = onLogout,
+            )
+        }
+        composable("friends") {
+            FriendsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDm = { userId, username ->
+                    val encodedName = URLEncoder.encode(username, "UTF-8")
+                    // Friends screen only knows the user id; dm.php?action=start resolves
+                    // (or creates) the conversation, so hand off through a start route.
+                    navController.navigate("dm_start/$userId/$encodedName")
+                },
+            )
+        }
+        composable("dms") {
+            DmListScreen(
+                onBack = { navController.popBackStack() },
+                onOpenConversation = { conversationId, username ->
+                    val encodedName = URLEncoder.encode(username, "UTF-8")
+                    navController.navigate("dm_chat/$conversationId/$encodedName")
+                },
+            )
+        }
+        composable(
+            "dm_start/{userId}/{username}",
+            arguments = listOf(
+                navArgument("userId") { type = NavType.IntType },
+                navArgument("username") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getInt("userId") ?: 0
+            val username = URLDecoder.decode(backStackEntry.arguments?.getString("username") ?: "", "UTF-8")
+            xyz.retroforge.velora.ui.dm.DmStartRedirect(
+                userId = userId,
+                fallbackUsername = username,
+                onResolved = { conversationId, resolvedUsername ->
+                    val encodedName = URLEncoder.encode(resolvedUsername, "UTF-8")
+                    navController.navigate("dm_chat/$conversationId/$encodedName") {
+                        popUpTo("friends")
+                    }
+                },
+            )
+        }
+        composable(
+            "dm_chat/{conversationId}/{username}",
+            arguments = listOf(
+                navArgument("conversationId") { type = NavType.IntType },
+                navArgument("username") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getInt("conversationId") ?: 0
+            val username = URLDecoder.decode(backStackEntry.arguments?.getString("username") ?: "", "UTF-8")
+            DmChatScreen(
+                conversationId = conversationId,
+                otherUsername = username,
+                onBack = { navController.popBackStack() },
             )
         }
         composable(

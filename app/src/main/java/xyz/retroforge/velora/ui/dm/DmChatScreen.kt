@@ -1,7 +1,8 @@
-package xyz.retroforge.velora.ui.chat
+package xyz.retroforge.velora.ui.dm
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,21 +31,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import xyz.retroforge.velora.network.ApiMessage
+import xyz.retroforge.velora.network.ApiDmMessage
+import xyz.retroforge.velora.ui.theme.VeloraBrand
 
 @Composable
-fun ChatScreen(
-    channelId: Int,
-    channelName: String,
+fun DmChatScreen(
+    conversationId: Int,
+    otherUsername: String,
     onBack: () -> Unit,
-    viewModel: ChatViewModel = viewModel(),
+    viewModel: DmChatViewModel = viewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
     val typingUsername by viewModel.typingUsername.collectAsState()
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(channelId) { viewModel.start(channelId) }
+    LaunchedEffect(conversationId) { viewModel.start(conversationId) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
@@ -52,7 +54,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("#$channelName") },
+                title = { Text("@$otherUsername") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
@@ -65,24 +67,22 @@ fun ChatScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                contentPadding = PaddingValues(12.dp),
             ) {
-                items(messages, key = { it.id }) { message -> MessageRow(message) }
+                items(messages, key = { it.id }) { message -> DmMessageRow(message) }
             }
 
             if (typingUsername != null) {
                 Text(
                     "$typingUsername is typing…",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = VeloraBrand,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                 )
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
@@ -92,7 +92,7 @@ fun ChatScreen(
                         viewModel.notifyTyping()
                     },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message #$channelName") },
+                    placeholder = { Text("Message @$otherUsername") },
                 )
                 IconButton(onClick = {
                     if (draft.isNotBlank()) {
@@ -108,10 +108,10 @@ fun ChatScreen(
 }
 
 @Composable
-private fun MessageRow(message: ApiMessage) {
+private fun DmMessageRow(message: ApiDmMessage) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(message.username, style = MaterialTheme.typography.labelLarge)
+            Text(message.username ?: "User ${message.userId}", style = MaterialTheme.typography.labelLarge)
             Text(
                 "  " + message.createdAt,
                 style = MaterialTheme.typography.labelSmall,

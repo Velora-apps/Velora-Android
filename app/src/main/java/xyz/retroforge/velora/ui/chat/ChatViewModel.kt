@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import xyz.retroforge.velora.network.ApiClient
 import xyz.retroforge.velora.network.ApiMessage
+import xyz.retroforge.velora.network.MarkReadBody
 import xyz.retroforge.velora.network.SendMessageBody
+import xyz.retroforge.velora.network.TypingPingBody
 
 /**
  * The backend has no WebSocket/SignalR channel (see README: "real-time
@@ -24,20 +26,49 @@ class ChatViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _typingUsername = MutableStateFlow<String?>(null)
+    val typingUsername: StateFlow<String?> = _typingUsername
+
     private var pollingJob: Job? = null
+    private var typingJob: Job? = null
     private var channelId: Int = -1
+    private var lastTypingPingAt = 0L
 
     fun start(channelId: Int) {
         if (this.channelId == channelId && pollingJob != null) return
         this.channelId = channelId
         _messages.value = emptyList()
         pollingJob?.cancel()
+        typingJob?.cancel()
         pollingJob = viewModelScope.launch {
             loadInitial(channelId)
+            markRead(channelId)
             while (true) {
                 delay(3000)
                 pollNew(channelId)
             }
+        }
+        typingJob = viewModelScope.launch {
+            while (true) {
+                delay(2000)
+                runCatching { ApiClient.service.typingList("channel", channelId) }
+                    .onSuccess { resp -> _typingUsername.value = resp.typing?.firstOrNull()?.username }
+            }
+        }
+    }
+
+    private suspend fun markRead(channelId: Int) {
+        runCatching { ApiClient.service.markChannelRead(MarkReadBody(channelId)) }
+    }
+
+    /** Throttled: server-side typing TTL is 6s, so once every ~2s is plenty. */
+    fun notifyTyping() {
+        if (channelId == -1) return
+        val now = System.currentTimeMillis()
+        if (now - lastTypingPingAt < 2000) return
+        lastTypingPingAt = now
+        viewModelScope.launch {
+            runCatching { ApiClient.service.typingPing(TypingPingBody("channel", channelId)) }
         }
     }
 
@@ -56,6 +87,7 @@ class ChatViewModel : ViewModel() {
             .onSuccess { resp ->
                 if (resp.success && !resp.messages.isNullOrEmpty()) {
                     _messages.value = _messages.value + resp.messages
+                    markRead(channelId)
                 }
             }
         // Silently ignore transient poll failures - don't spam the error banner.
@@ -78,5 +110,6 @@ class ChatViewModel : ViewModel() {
 
     override fun onCleared() {
         pollingJob?.cancel()
+        typingJob?.cancel()
     }
 }

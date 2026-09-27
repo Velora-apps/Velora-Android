@@ -1,11 +1,14 @@
 package xyz.retroforge.velora.ui.servers
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -19,23 +22,42 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import xyz.retroforge.velora.network.ApiChannel
 import xyz.retroforge.velora.network.ApiClient
+import xyz.retroforge.velora.ui.theme.VeloraBrand
 
 class ChannelListViewModel : ViewModel() {
     private val _channels = MutableStateFlow<List<ApiChannel>>(emptyList())
     val channels: StateFlow<List<ApiChannel>> = _channels
 
+    private val _unreadChannelIds = MutableStateFlow<Set<Int>>(emptySet())
+    val unreadChannelIds: StateFlow<Set<Int>> = _unreadChannelIds
+
     fun load(serverId: Int) {
         viewModelScope.launch {
             runCatching { ApiClient.service.listChannels(serverId) }
                 .onSuccess { resp -> if (resp.success) _channels.value = resp.channels ?: emptyList() }
+        }
+        viewModelScope.launch {
+            while (true) {
+                runCatching { ApiClient.service.unreadSummary() }
+                    .onSuccess { resp ->
+                        if (resp.success) {
+                            _unreadChannelIds.value = resp.channels
+                                ?.mapNotNull { (id, count) -> id.toIntOrNull()?.takeIf { count > 0 } }
+                                ?.toSet() ?: emptySet()
+                        }
+                    }
+                delay(6000)
+            }
         }
     }
 }
@@ -49,6 +71,7 @@ fun ChannelListScreen(
     viewModel: ChannelListViewModel = viewModel(),
 ) {
     val channels by viewModel.channels.collectAsState()
+    val unreadChannelIds by viewModel.unreadChannelIds.collectAsState()
 
     LaunchedEffect(serverId) { viewModel.load(serverId) }
 
@@ -69,6 +92,13 @@ fun ChannelListScreen(
                 ListItem(
                     headlineContent = { Text(channel.name) },
                     leadingContent = { Text("#") },
+                    trailingContent = {
+                        if (channel.id in unreadChannelIds) {
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier.size(8.dp).background(VeloraBrand, CircleShape),
+                            )
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onOpenChannel(channel) },
